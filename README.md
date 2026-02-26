@@ -22,10 +22,9 @@ The primary focus is on providing an accessible yet powerful platform for traini
 - Simplified implementation designed to run in Jupyter notebooks or standalone Python.
 - Pure C implementation for maximum performance and minimal dependencies for inference.
 - Efficient training with gradient accumulation and mixed precision.
-- Cosine learning rate scheduling with warmup.
+- Cosine learning rate scheduling with stable period followed by cooldown.
 - Gradient clipping and optimization techniques.
 - Checkpointing and model export capabilities.
-- The primary `train.py` script is a simplified single-process version. Advanced features like DDP or comprehensive WandB integration might require custom modifications.
 
 ### Key Improvements from nanochat / modded-nanogpt
 
@@ -113,12 +112,12 @@ According to the DeepMind "Chinchilla" paper, compute-optimal training is achiev
 
 -   **Model Parameters**: ~0.96 Million
 -   **Optimal Tokens**: `0.96M params * 20 tokens/param = 19.2M tokens`
--   **Tokens per Iteration**: `32 (batch) * 512 (seq_len) = 16,384 tokens`
+-   **Tokens per Iteration**: `4 (grad_accum) * 32 (batch) * 256 (seq_len) = 32,768 tokens`
 
 The Chinchilla-optimal number of iterations is therefore:
-`19,200,000 / 16,384 ≈ 1,167 iterations`
+`19,200,000 / 32,768 ≈ 586 iterations`
 
-This suggests that for the default model size, training for around **1,167 iterations** would provide the best performance for the given compute budget.
+This suggests that for the default model size, training for around **586 iterations** would provide the best performance for the given compute budget.
 
 </details>
 
@@ -179,11 +178,12 @@ An "epoch" in this context refers to one full pass over the training data.
 
 -   **Total Tokens in `data00.bin`**: 57,979,674
 -   **Default Batch Size**: 32
--   **Default Sequence Length**: 512
--   **Tokens per Iteration**: `32 * 512 = 16,384`
+-   **Default Sequence Length**: 256
+-   **Gradient Accumulation Steps**: 4
+-   **Tokens per Iteration**: `4 * 32 * 256 = 32,768`
 
 Therefore, the total number of training iterations for one epoch is:
-`57,979,674 / 16,384 ≈ 3,538 iterations`
+`57,979,674 / 32,768 ≈ 1,769 iterations`
 
 </details>
 
