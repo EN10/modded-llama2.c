@@ -94,8 +94,6 @@ def legacy_export(model, filepath):
     # now all the layers
     # attention weights
     for layer in model.layers:
-        serialize_fp32(out_file, layer.attention_norm.weight)
-    for layer in model.layers:
         serialize_fp32(out_file, layer.attention.wq.weight)
     for layer in model.layers:
         serialize_fp32(out_file, layer.attention.wk.weight)
@@ -105,15 +103,9 @@ def legacy_export(model, filepath):
         serialize_fp32(out_file, layer.attention.wo.weight)
     # ffn weights
     for layer in model.layers:
-        serialize_fp32(out_file, layer.ffn_norm.weight)
-    for layer in model.layers:
         serialize_fp32(out_file, layer.feed_forward.w1.weight)
     for layer in model.layers:
         serialize_fp32(out_file, layer.feed_forward.w2.weight)
-    for layer in model.layers:
-        serialize_fp32(out_file, layer.feed_forward.w3.weight)
-    # final rmsnorm
-    serialize_fp32(out_file, model.norm.weight)
     # freqs_cis
     serialize_fp32(out_file, model.freqs_cos[:p.max_seq_len])
     serialize_fp32(out_file, model.freqs_sin[:p.max_seq_len])
@@ -158,9 +150,6 @@ def version1_export(model, filepath):
 
     # now let's write out all the params
     weights = [
-        *[layer.attention_norm.weight for layer in model.layers],
-        *[layer.ffn_norm.weight for layer in model.layers],
-        model.norm.weight,
         model.tok_embeddings.weight,
         *[layer.attention.wq.weight for layer in model.layers],
         *[layer.attention.wk.weight for layer in model.layers],
@@ -168,7 +157,6 @@ def version1_export(model, filepath):
         *[layer.attention.wo.weight for layer in model.layers],
         *[layer.feed_forward.w1.weight for layer in model.layers],
         *[layer.feed_forward.w2.weight for layer in model.layers],
-        *[layer.feed_forward.w3.weight for layer in model.layers],
     ]
     if not shared_classifier:
         weights.append(model.output.weight)
@@ -201,7 +189,6 @@ def version2_export(model, filepath, group_size=64):
         *[layer.attention.wo.weight for layer in model.layers],
         *[layer.feed_forward.w1.weight for layer in model.layers],
         *[layer.feed_forward.w2.weight for layer in model.layers],
-        *[layer.feed_forward.w3.weight for layer in model.layers],
     ]
     shared_classifier = torch.equal(model.tok_embeddings.weight, model.output.weight)
     if not shared_classifier:
@@ -230,13 +217,6 @@ def version2_export(model, filepath, group_size=64):
     assert pad >= 0
     out_file.write(b'\0' * pad)
     # now that the header is done, let's write out the model
-
-    # first let's write out all the params that we are keeping in fp32: the norms
-    for layer in model.layers: # attention norms
-        serialize_fp32(out_file, layer.attention_norm.weight)
-    for layer in model.layers: # MLP norms
-        serialize_fp32(out_file, layer.ffn_norm.weight)
-    serialize_fp32(out_file, model.norm.weight) # final pre-classifier norm
 
     # now let's write out all the params that we are quantizing to Q8_0
     # note we skip classifier weights, which are shared with the embedding
@@ -285,20 +265,16 @@ def hf_export(llama_model, filepath, group_size=64, dtype=torch.float32):
 
     # Transfer weights from llama model to the HF state dictionary format
     hf_state_dict['model.embed_tokens.weight'] = llama_model.tok_embeddings.weight.clone().to(dtype)
-    hf_state_dict['model.norm.weight'] = llama_model.norm.weight.clone().to(dtype)
 
     # Add each layer's weights to the HF state dictionary
     for i, layer in enumerate(llama_model.layers):
         layer_id = layer.layer_id
-        hf_state_dict[f'model.layers.{i}.input_layernorm.weight'] = llama_model.layers[layer_id].attention_norm.weight.clone().to(dtype)
         hf_state_dict[f'model.layers.{i}.self_attn.q_proj.weight'] = permute_original(llama_model.layers[layer_id].attention.wq.weight.clone()).to(dtype)
         hf_state_dict[f'model.layers.{i}.self_attn.k_proj.weight'] = permute_original(llama_model.layers[layer_id].attention.wk.weight.clone(), num_key_value_heads, key_value_dim, dim).to(dtype)
         hf_state_dict[f'model.layers.{i}.self_attn.v_proj.weight'] = llama_model.layers[layer_id].attention.wv.weight.clone().to(dtype)
         hf_state_dict[f'model.layers.{i}.self_attn.o_proj.weight'] = llama_model.layers[layer_id].attention.wo.weight.clone().to(dtype)
-        hf_state_dict[f'model.layers.{i}.post_attention_layernorm.weight'] = llama_model.layers[layer_id].ffn_norm.weight.clone().to(dtype)
         hf_state_dict[f'model.layers.{i}.mlp.gate_proj.weight'] = llama_model.layers[layer_id].feed_forward.w1.weight.clone().to(dtype)
         hf_state_dict[f'model.layers.{i}.mlp.down_proj.weight'] = llama_model.layers[layer_id].feed_forward.w2.weight.clone().to(dtype)
-        hf_state_dict[f'model.layers.{i}.mlp.up_proj.weight'] = llama_model.layers[layer_id].feed_forward.w3.weight.clone().to(dtype)
 
     # llama2.c usually uses tied weights -> reference the embed_tokens.weights instead
     hf_state_dict['lm_head.weight'] = hf_state_dict['model.embed_tokens.weight']
@@ -415,19 +391,15 @@ def load_meta_model(model_path):
     model = Transformer(config)
 
     model.tok_embeddings.weight = nn.Parameter(state_dict['tok_embeddings.weight'])
-    model.norm.weight = nn.Parameter(state_dict['norm.weight'])
 
     for layer in model.layers:
         i = layer.layer_id
-        layer.attention_norm.weight = nn.Parameter(state_dict[f'layers.{i}.attention_norm.weight'])
         layer.attention.wq.weight = nn.Parameter(state_dict[f'layers.{i}.attention.wq.weight'])
         layer.attention.wk.weight = nn.Parameter(state_dict[f'layers.{i}.attention.wk.weight'])
         layer.attention.wv.weight = nn.Parameter(state_dict[f'layers.{i}.attention.wv.weight'])
         layer.attention.wo.weight = nn.Parameter(state_dict[f'layers.{i}.attention.wo.weight'])
-        layer.ffn_norm.weight = nn.Parameter(state_dict[f'layers.{i}.ffn_norm.weight'])
         layer.feed_forward.w1.weight = nn.Parameter(state_dict[f'layers.{i}.feed_forward.w1.weight'])
         layer.feed_forward.w2.weight = nn.Parameter(state_dict[f'layers.{i}.feed_forward.w2.weight'])
-        layer.feed_forward.w3.weight = nn.Parameter(state_dict[f'layers.{i}.feed_forward.w3.weight'])
 
     # final classifier
     model.output.weight = nn.Parameter(state_dict['output.weight'])
@@ -462,7 +434,6 @@ def load_hf_model(model_path):
     model = Transformer(config)
 
     model.tok_embeddings.weight = nn.Parameter(hf_dict['model.embed_tokens.weight'])
-    model.norm.weight = nn.Parameter(hf_dict['model.norm.weight'])
 
     # huggingface permutes WQ and WK, this function reverses it
     def permute_reverse(w, n_heads=config.n_heads, dim1=config.dim, dim2=config.dim):
@@ -470,15 +441,12 @@ def load_hf_model(model_path):
 
     for layer in model.layers:
         i = layer.layer_id
-        layer.attention_norm.weight = nn.Parameter(hf_dict[f'model.layers.{i}.input_layernorm.weight'])
         layer.attention.wq.weight = nn.Parameter(permute_reverse(hf_dict[f'model.layers.{i}.self_attn.q_proj.weight']))
         layer.attention.wk.weight = nn.Parameter(permute_reverse(hf_dict[f'model.layers.{i}.self_attn.k_proj.weight']))
         layer.attention.wv.weight = nn.Parameter(hf_dict[f'model.layers.{i}.self_attn.v_proj.weight'])
         layer.attention.wo.weight = nn.Parameter(hf_dict[f'model.layers.{i}.self_attn.o_proj.weight'])
-        layer.ffn_norm.weight = nn.Parameter(hf_dict[f'model.layers.{i}.post_attention_layernorm.weight'])
         layer.feed_forward.w1.weight = nn.Parameter(hf_dict[f'model.layers.{i}.mlp.gate_proj.weight'])
         layer.feed_forward.w2.weight = nn.Parameter(hf_dict[f'model.layers.{i}.mlp.down_proj.weight'])
-        layer.feed_forward.w3.weight = nn.Parameter(hf_dict[f'model.layers.{i}.mlp.up_proj.weight'])
 
     # final classifier
     model.output.weight = nn.Parameter(hf_dict['lm_head.weight'])

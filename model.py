@@ -1,4 +1,4 @@
-# --- START OF model.py (Readable FASTER v2 - No QK-Norm, No Softcap) ---
+# --- START OF model.py (relu² FFN, no-param RMSNorm, RoPE, GQA) ---
 
 import math
 import inspect
@@ -19,32 +19,20 @@ class ModelArgs:
     n_heads: int = 32
     n_kv_heads: Optional[int] = None # For Grouped Query Attention (GQA)
     vocab_size: int = 32000         # Usually set dynamically based on tokenizer + padding
-    hidden_dim: Optional[int] = None # Calculated by SwiGLU if None
-    multiple_of: int = 256          # Makes SwiGLU hidden layer size a multiple of this
+    hidden_dim: Optional[int] = None # Calculated by FeedForward if None
+    multiple_of: int = 256          # Makes FFN hidden layer size a multiple of this
     norm_eps: float = 1e-5          # RMSNorm epsilon, consistent with Llama 2
     max_seq_len: int = 2048          # Max sequence length for RoPE precomputation
     dropout: float = 0.0            # Dropout rate
 
 
 class RMSNorm(torch.nn.Module):
-    """
-    Root Mean Square Layer Normalization.
-    Derived from https://arxiv.org/abs/1910.07467
-    """
     def __init__(self, dim: int, eps: float = 1e-5):
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim)) # Learnable gain parameter
-
-    def _norm(self, x):
-        """Applies the RMSNorm normalization formula."""
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
-        """Forward pass: normalizes input, then applies learnable gain."""
-        # Normalize in float32 for stability, then cast back
-        output = self._norm(x.float()).type_as(x)
-        return output * self.weight
+        return F.rms_norm(x, (x.size(-1),))
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
@@ -224,32 +212,21 @@ class Attention(nn.Module):
 
 class FeedForward(nn.Module):
     """
-    Position-wise Feed-Forward network using SwiGLU activation.
-    SwiGLU(x, W, V, W2) = (SiLU(xW) * xV)W2
-    See https://arxiv.org/abs/2002.05202
+    Position-wise Feed-Forward network using relu² activation.
+    relu²(x) = relu(x)²  — simpler and faster than SwiGLU.
     """
     def __init__(self, dim: int, hidden_dim: Optional[int], multiple_of: int, dropout: float):
         super().__init__()
-        # Calculate hidden dimension if not provided, according to Llama 2 paper
         if hidden_dim is None:
             hidden_dim = 4 * dim
-            hidden_dim = int(2 * hidden_dim / 3)
-            # Ensure hidden_dim is a multiple of `multiple_of` for efficiency
             hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
-        # Linear layers for SwiGLU
-        self.w1 = nn.Linear(dim, hidden_dim, bias=False) # Corresponds to W in SwiGLU formula
-        self.w3 = nn.Linear(dim, hidden_dim, bias=False) # Corresponds to V in SwiGLU formula
-        # Down-projection layer
-        self.w2 = nn.Linear(hidden_dim, dim, bias=False) # Corresponds to W2 in SwiGLU formula
-
+        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        # Apply SwiGLU activation: SiLU(x @ w1) * (x @ w3)
-        swiglu_out = F.silu(self.w1(x)) * self.w3(x)
-        # Apply down-projection and dropout
-        return self.dropout(self.w2(swiglu_out))
+        return self.dropout(self.w2(F.relu(self.w1(x)).square()))
 
 
 class TransformerBlock(nn.Module):
@@ -411,7 +388,7 @@ class Transformer(nn.Module):
         # It contains 'tok_embeddings.weight' in its name.
         embed_head_params = [p for n, p in param_dict.items() if "tok_embeddings.weight" in n]
 
-        # Identify Norm weights and any other 1D parameters (scalars/biases)
+        # Identify any 1D parameters (scalars/biases); RMSNorm has no learnable params so this group may be empty
         scalar_norm_params = [p for n, p in param_dict.items() if p.ndim < 2 or "norm.weight" in n]
 
         # Identify all other >= 2D weights (these are the hidden matrices in Attention/FFN)

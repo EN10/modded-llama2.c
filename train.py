@@ -12,7 +12,6 @@ from contextlib import nullcontext
 from datetime import datetime
 from functools import partial, lru_cache
 
-from sympy import Number
 import torch
 import torch.nn.functional as F # Needed for estimate_loss fallback
 
@@ -79,12 +78,7 @@ except FileNotFoundError:
 config = {k: globals()[k] for k in config_keys}
 # -----------------------------------------------------------------------------
 
-# *** Compile is explicitly disabled by your command, overriding the default ***
-if config['compile']:
-    print("INFO: 'compile=True' in config, but command line likely set it False.")
-    compile = config['compile'] # Respect the final setting after configurator.py
-else:
-    compile = False # Ensure compile is False if set by command line
+compile = config['compile']
 
 
 # Derived hyperparameters

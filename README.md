@@ -1,6 +1,6 @@
 # modded-llama2.c
 
-`modded-llama2.c` is a streamlined and enhanced version of [BabyLlama](https://github.com/EN10/BabyLlama), designed for simplicity and power. It runs seamlessly in Jupyter notebooks, making it easy to train and experiment with LLaMA 2 models. This project builds upon the solid foundation of Andrej Karpathy's [llama2.c](https://github.com/karpathy/llama2.c) and integrates advanced training techniques from [modded-nanogpt](https://github.com/KellerJordan/modded-nanogpt).
+`modded-llama2.c` is a streamlined and enhanced version of [BabyLlama](https://github.com/EN10/BabyLlama), designed for simplicity and power. It runs seamlessly in Jupyter notebooks, making it easy to train and experiment with LLaMA 2 models. This project builds upon the solid foundation of Andrej Karpathy's [llama2.c](https://github.com/karpathy/llama2.c) and integrates ideas from [nanochat](https://github.com/karpathy/nanochat) and [modded-nanogpt](https://github.com/KellerJordan/modded-nanogpt).
 
 The primary focus is on providing an accessible yet powerful platform for training language models on the [TinyStories dataset](https://huggingface.co/datasets/roneneldan/TinyStories). Whether you're a researcher, a student, or a hobbyist, this repository offers a hands-on approach to understanding and building modern LLMs.
 
@@ -27,22 +27,20 @@ The primary focus is on providing an accessible yet powerful platform for traini
 - Checkpointing and model export capabilities.
 - The primary `train.py` script is a simplified single-process version. Advanced features like DDP or comprehensive WandB integration might require custom modifications.
 
-### Key Improvements from modded-nanogpt
+### Key Improvements from nanochat / modded-nanogpt
 
 <details>
 <summary>Click to expand for details</summary>
 
 - **Architecture Improvements (via `model.py` modifications)**
-  - QK-Normalization for improved training stability
+  - **relu² activation** (from nanochat) — simpler and faster than SwiGLU, uses 2 linear layers instead of 3
+  - **No-parameter RMSNorm** (from nanochat) — purely functional normalization with no learnable weights
   - Zero-initialized projections for better convergence
-  - Untied & padded vocabulary head
-  - Logit Softcapping to control output distributions
+  - Padded vocabulary head
 - **Training Improvements**
   - Parameter-grouped AdamW optimizer with different learning rates for:
     - Embedding layers
     - Hidden matrix weights
-    - Norm/scalar parameters
-    - Head layer
   - Improved learning rate schedule: stable period followed by cosine decay
   - Efficient gradient accumulation with mixed precision
   - TinyStories dataset focus, with flexible vocabulary options (e.g., Llama 2 default, or smaller custom vocabularies like 128 tokens).
@@ -145,9 +143,9 @@ gcc -O3 -o run run.c -lm
 ## Model Architecture
 
 The implementation follows the LLaMA 2 architecture with:
-- RMSNorm for layer normalization
+- No-parameter RMSNorm for layer normalization
 - RoPE positional embeddings
-- SwiGLU activation function
+- relu² activation function (from nanochat)
 - Grouped-Query Attention (GQA)
 
 <details>
@@ -197,4 +195,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [BabyLlama](https://github.com/EN10/BabyLlama) by EN10 - This project is an updated version of BabyLlama
 - [llama2.c](https://github.com/karpathy/llama2.c) by Andrej Karpathy
+- [nanochat](https://github.com/karpathy/nanochat) by Andrej Karpathy
 - [modded-nanogpt](https://github.com/KellerJordan/modded-nanogpt) by Keller Jordan

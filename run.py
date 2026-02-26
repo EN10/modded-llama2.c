@@ -55,16 +55,12 @@ class Transformer:
         # Define weight shapes in a declarative map
         weight_map = [
             ('token_embedding_table', (cfg.vocab_size, cfg.dim)),
-            ('rms_att_weight', (cfg.n_layers, cfg.dim)),
             ('wq', (cfg.n_layers, cfg.dim, cfg.dim)),
             ('wk', (cfg.n_layers, kv_dim, cfg.dim)),
             ('wv', (cfg.n_layers, kv_dim, cfg.dim)),
             ('wo', (cfg.n_layers, cfg.dim, cfg.dim)),
-            ('rms_ffn_weight', (cfg.n_layers, cfg.dim)),
             ('w1', (cfg.n_layers, cfg.hidden_dim, cfg.dim)),
             ('w2', (cfg.n_layers, cfg.dim, cfg.hidden_dim)),
-            ('w3', (cfg.n_layers, cfg.hidden_dim, cfg.dim)),
-            ('rms_final_weight', (cfg.dim,)),
         ]
         
         weights = {}
@@ -96,7 +92,7 @@ class Transformer:
             'xb': (cfg.dim,),            # buffer for intermediate results
             'xb2': (cfg.dim,),           # another buffer for intermediate results
             'hb': (cfg.hidden_dim,),     # buffer for the hidden state of the FFN
-            'hb2': (cfg.hidden_dim,),    # another buffer for the hidden state of the FFN
+
             'q': (cfg.dim,),             # query vector for the current token
             'key_cache': (cfg.n_layers, cfg.seq_len, kv_dim),    # cache for key vectors for all tokens
             'value_cache': (cfg.n_layers, cfg.seq_len, kv_dim), # cache for value vectors for all tokens
@@ -121,7 +117,7 @@ class Transformer:
         for l in range(cfg.n_layers):
             # 2a. RMS Normalization (before Attention)
             # Normalizes the input to have a stable distribution, improving training stability.
-            s['xb'] = (x / np.sqrt(np.mean(x**2) + 1e-5)) * w['rms_att_weight'][l]
+            s['xb'] = x / np.sqrt(np.mean(x**2) + 1e-5)
 
             # 2b. Q, K, V Calculation
             # Project the normalized input into Query, Key, and Value vectors.
@@ -169,15 +165,14 @@ class Transformer:
 
             # 2g. Feed-Forward Network (FFN)
             # A two-layer neural network that provides additional modeling capacity.
-            s['xb'] = (x / np.sqrt(np.mean(x**2) + 1e-5)) * w['rms_ffn_weight'][l] # RMSNorm
+            s['xb'] = x / np.sqrt(np.mean(x**2) + 1e-5) # RMSNorm
             h1 = s['xb'] @ w['w1'][l].T # First linear layer
-            h2 = s['xb'] @ w['w3'][l].T # Third linear layer (for SwiGLU)
-            h1 *= (1.0 / (1.0 + np.exp(-h1))) # SiLU activation
-            x += (h1 * h2) @ w['w2'][l].T # Second linear layer and residual connection
+            h1 = np.maximum(h1, 0) ** 2 # relu² activation
+            x += h1 @ w['w2'][l].T # Down projection and residual connection
 
         # 3. Final Normalization and Classifier
         # Apply final normalization and project to the vocabulary space to get logits.
-        x = (x / np.sqrt(np.mean(x**2) + 1e-5)) * w['rms_final_weight']
+        x = x / np.sqrt(np.mean(x**2) + 1e-5)
         s['logits'] = x @ w['wcls'].T
         return s['logits']
 
