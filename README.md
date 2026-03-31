@@ -47,6 +47,15 @@ The primary focus is on providing an accessible yet powerful platform for traini
 
 ## Getting Started
 
+Train and run a language model in 4 lines:
+
+```bash
+git clone https://github.com/eniompw/modded-llama2.c
+. ./modded-llama2.c/download_tinystories.sh
+cd modded-llama2.c && python train.py --max_iters=1
+./run out/model.bin -i "Once upon a time "
+```
+
 ### Quick Start: The `Baby_Llama_128.ipynb` Notebook
 
 For a complete, hands-on example of the entire workflow, the [`Baby_Llama_128.ipynb`](Baby_Llama_128.ipynb) notebook is the recommended starting point.
