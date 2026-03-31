@@ -130,6 +130,21 @@ This suggests that for the default model size, training for around **586 iterati
 
 </details>
 
+<details>
+<summary><b>Overfitting Check</b></summary>
+
+When training for 1000 iterations with default settings, the model shows no signs of overfitting. The train-val loss gap remains small and stable (~0.007) throughout, and val loss continues to decrease at every checkpoint:
+
+| Step | Train Loss | Val Loss | Gap    |
+|------|-----------|----------|--------|
+| 0    | 4.9303    | 4.9313   | 0.0010 |
+| 500  | 1.2393    | 1.2477   | 0.0084 |
+| 1000 | 1.0391    | 1.0460   | 0.0069 |
+
+Since val loss is still improving at step 1000, the model is likely **underfitting** and could benefit from additional training iterations.
+
+</details>
+
 ### Inference
 
 To run inference with a trained model, use the compiled `run` executable.

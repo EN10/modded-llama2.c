@@ -85,6 +85,18 @@ jq '.[] | .story | length' data00.json | awk '{ total += $1; count++ } END { pri
 
 This gives an average story size of approximately **775 characters**.
 
+### Average Story Length (Words)
+
+Based on a sample of 10,000 stories from the dataset:
+
+| Metric        | Value     |
+|---------------|-----------|
+| Average       | **169 words** |
+| Median        | 151 words |
+| Min           | 43 words  |
+| Max           | 878 words |
+| Std deviation | 71 words  |
+
 ### Total Story Size
 
 The total number of characters in all stories can be calculated with a simple Python script.
